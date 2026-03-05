@@ -1,26 +1,30 @@
+# app/main.py
+
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
-# Importa el motor y la base para crear las tablas al iniciar
 from app.database import engine, Base
-
-# Importa los routers de cada módulo de rutas
 from app.routes import datos, analisis, pdf, correo
 
-# Crea todas las tablas en Neon si todavía no existen
-# Si ya existen, no hace nada — no destruye datos
-Base.metadata.create_all(bind=engine)
 
-# Instancia principal de la aplicación FastAPI
+# Reemplaza @app.on_event('startup') que está deprecado en versiones nuevas
+# Crea las tablas en Neon al iniciar — si ya existen no hace nada
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield  # aquí corre la app
+    await engine.dispose()  # al apagar libera todas las conexiones
+
+
 app = FastAPI(
     title="API Análisis Exploratorio",
     description="Parcial I — EDA con FastAPI + Neon",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan  # registra el startup/shutdown
 )
 
-# Middleware CORS — permite que Java (u otro cliente) consuma la API
-# allow_origins=["*"] acepta peticiones desde cualquier origen
-# En producción se reemplaza por la IP/puerto exacto del cliente Java
+# Permite peticiones desde cualquier origen — necesario para Java
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -28,13 +32,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Registra cada grupo de endpoints con su prefijo y etiqueta en Swagger
-app.include_router(datos.router,     prefix="/datos",    tags=["Datos"])
-app.include_router(analisis.router,  prefix="/analisis", tags=["Análisis"])
-app.include_router(pdf.router,       prefix="/pdf",      tags=["PDF"])
-app.include_router(correo.router,    prefix="/correo",   tags=["Correo"])
+# Registra los routers con sus prefijos
+app.include_router(datos.router,    prefix="/datos",    tags=["Datos"])
+app.include_router(analisis.router, prefix="/analisis", tags=["Análisis"])
+app.include_router(pdf.router,      prefix="/pdf",      tags=["PDF"])
+app.include_router(correo.router,   prefix="/correo",   tags=["Correo"])
 
-# Endpoint raíz — sirve para verificar que la API está corriendo
+
 @app.get("/")
 def root():
     return {"mensaje": "API funcionando correctamente"}

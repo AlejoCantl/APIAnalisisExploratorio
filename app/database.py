@@ -1,36 +1,50 @@
-# Carga las variables del archivo .env (DATABASE_URL, credenciales, etc.)
-from dotenv import load_dotenv
-load_dotenv()
+# app/database.py
 
 import os
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
+import re
+import ssl
+from dotenv import load_dotenv
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy.orm import declarative_base
 
-# Lee la URL de conexión a Neon desde el .env
-DATABASE_URL = os.getenv("DATABASE_URL")
+load_dotenv()
 
-# Crea el motor de conexión a PostgreSQL (Neon)
-# connect_args: SSL obligatorio para Neon
-# pool_pre_ping: reintenta la conexión si Neon está en cold start
-# pool_recycle: renueva conexiones cada 5 minutos para evitar timeouts
-engine = create_engine(
+# Lee la URL del .env y reemplaza 'postgresql://' por 'postgresql+asyncpg://'
+# asyncpg es compatible con Windows (ProactorEventLoop)
+_raw_url = os.getenv('DATABASE_URL', '')
+DATABASE_URL = re.sub(r'^postgresql://', 'postgresql+asyncpg://', _raw_url)
+
+# asyncpg no soporta sslmode ni channel_binding como parámetros de URL
+DATABASE_URL = re.sub(r'[&?](sslmode|channel_binding)=[^&]*', '', DATABASE_URL)
+
+# SSL context para Neon (equivalente a sslmode=require)
+_ssl_ctx = ssl.create_default_context()
+
+# Crea el motor asíncrono
+engine = create_async_engine(
     DATABASE_URL,
-    connect_args={"sslmode": "require"},
-    pool_pre_ping=True,
-    pool_recycle=300
+    echo=False,
+    pool_pre_ping=True,    # maneja el cold start de Neon
+    pool_recycle=300,       # renueva conexiones cada 5 minutos
+    connect_args={"ssl": _ssl_ctx}
 )
 
-# Fábrica de sesiones — cada petición HTTP abre y cierra su propia sesión
-SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+# Fábrica de sesiones asíncronas
+# expire_on_commit=False evita que los objetos expiren al hacer commit
+SessionLocal = async_sessionmaker(
+    bind=engine,
+    expire_on_commit=False,
+    class_=AsyncSession
+)
 
 # Clase base de la que heredan todos los modelos ORM
 Base = declarative_base()
 
-# Función generadora que FastAPI inyecta como dependencia en cada endpoint
-# Garantiza que la sesión siempre se cierre, aunque ocurra un error
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db        # entrega la sesión al endpoint
-    finally:
-        db.close()      # siempre se cierra al terminar la petición
+
+# Generador de sesiones — inyectado en los routes vía Depends(get_db)
+async def get_db():
+    async with SessionLocal() as session:
+        try:
+            yield session        # entrega la sesión al endpoint
+        finally:
+            await session.close() # siempre se cierra al terminar

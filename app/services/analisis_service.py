@@ -9,7 +9,7 @@ import seaborn as sns
 import pandas as pd
 import numpy as np
 from sqlalchemy.orm import Session
-
+from sqlalchemy import select
 from app.services.base_service import BaseService
 from app.models import Dataset
 
@@ -38,7 +38,7 @@ class AnalisisService(BaseService):
 
     # ─── MÉTODO PÚBLICO PRINCIPAL ────────────────────────────────────────────
 
-    def ejecutar(self, df: pd.DataFrame, dataset_id: int,
+    async def ejecutar(self, df: pd.DataFrame, dataset_id: int,
                  cols_cuant: list, cols_cual: list) -> dict:
         """
         Orquesta todo el EDA en orden.
@@ -77,7 +77,7 @@ class AnalisisService(BaseService):
                     self.rutas_graficos.append(ruta)
 
             # 7. Guarda las columnas seleccionadas en Neon
-            self._guardar_columnas(dataset_id, cols_cuant, cols_cual)
+            await self._guardar_columnas(dataset_id, cols_cuant, cols_cual)
 
             self.logger.info(f"EDA completado. Gráficos generados: {len(self.rutas_graficos)}")
 
@@ -262,21 +262,23 @@ class AnalisisService(BaseService):
 
     # ─── MÉTODO PRIVADO — PERSISTENCIA ───────────────────────────────────────
 
-    def _guardar_columnas(self, dataset_id: int, cols_cuant: list, cols_cual: list):
+    async def _guardar_columnas(self, dataset_id: int, cols_cuant: list, cols_cual: list):
         """
         Actualiza el registro del dataset en Neon con las columnas
         cuantitativas y cualitativas indicadas por el usuario.
         """
         self.logger.info(f"Guardando columnas en Neon para dataset_id={dataset_id}")
 
-        dataset = self.db.query(Dataset).filter(Dataset.id == dataset_id).first()
+        result = await self.db.execute(
+        select(Dataset).filter(Dataset.id == dataset_id)
+        )
+        dataset = result.scalar_one_or_none()
 
         if not dataset:
             raise ValueError(f"No se encontró dataset con id={dataset_id}")
 
-        # Guarda como string separado por comas
         dataset.columnas_cuantitativas = ",".join(cols_cuant)
         dataset.columnas_cualitativas  = ",".join(cols_cual)
 
-        self.db.commit()
+        await self.db.commit()
         self.logger.info("Columnas guardadas correctamente en Neon")
