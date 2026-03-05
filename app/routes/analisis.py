@@ -1,4 +1,6 @@
 # app/routes/analisis.py
+# Endpoint para ejecutar el análisis exploratorio de datos (EDA).
+# Reutiliza el DataFrame ya cargado en DatosService — no vuelve a descargarlo.
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
@@ -6,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.schemas import AnalisisRequest, AnalisisResponse
 from app.services.analisis_service import AnalisisService
-from app.routes.datos import get_datos_service
+from app.routes.datos import get_datos_service  # comparte la instancia global de DatosService
 from app.services.datos_service import DatosService
 
 router = APIRouter()

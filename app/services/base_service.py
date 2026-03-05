@@ -1,4 +1,6 @@
 # app/services/base_service.py
+# Clase base de la que heredan todos los services del proyecto.
+# Provee sesión de DB, logger por clase y manejo centralizado de errores.
 
 import logging
 from fastapi import HTTPException

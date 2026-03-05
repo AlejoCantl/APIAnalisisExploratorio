@@ -1,4 +1,6 @@
 # app/services/datos_service.py
+# Servicio encargado de descargar datasets (CSV/XLSX), mantener el DataFrame
+# en memoria y registrar los metadatos en la base de datos Neon.
 
 import json
 import io
@@ -14,9 +16,9 @@ class DatosService(BaseService):
 
     def __init__(self, db: AsyncSession):
         super().__init__(db)
-        self.df: pd.DataFrame | None = None
-        self.dataset_id: int | None = None
-        self._estado: str = "sin_datos"
+        self.df: pd.DataFrame | None = None       # DataFrame activo en memoria
+        self.dataset_id: int | None = None         # ID del dataset en Neon
+        self._estado: str = "sin_datos"             # sin_datos → analizando → cargado
 
     # ─── MÉTODOS PÚBLICOS ────────────────────────────────────────────────────
 
