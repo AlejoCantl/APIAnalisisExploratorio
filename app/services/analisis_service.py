@@ -263,7 +263,7 @@ class AnalisisService(BaseService):
         fig.suptitle(f"Análisis de '{col}'", fontsize=14, fontweight="bold")
 
         # ── Gráfico de barras ──
-        sns.barplot(x=top_valores.index, y=top_valores.values, ax=ax1, palette="Blues_d")
+        sns.barplot(x=top_valores.index, y=top_valores.values, ax=ax1, hue=top_valores.index, palette="Blues_d", legend=False)
         ax1.set_title("Frecuencia por categoría")
         ax1.set_xlabel(col)
         ax1.set_ylabel("Cantidad")
