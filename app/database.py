@@ -17,16 +17,13 @@ DATABASE_URL = re.sub(r'^postgresql://', 'postgresql+asyncpg://', _raw_url)
 # asyncpg no soporta sslmode ni channel_binding como parámetros de URL
 DATABASE_URL = re.sub(r'[&?](sslmode|channel_binding)=[^&]*', '', DATABASE_URL)
 
-# SSL context para Neon (equivalente a sslmode=require)
-_ssl_ctx = ssl.create_default_context()
-
 # Crea el motor asíncrono
 engine = create_async_engine(
     DATABASE_URL,
     echo=False,
     pool_pre_ping=True,    # maneja el cold start de Neon
     pool_recycle=300,       # renueva conexiones cada 5 minutos
-    connect_args={"ssl": _ssl_ctx}
+    connect_args={"ssl": "require"}
 )
 
 # Fábrica de sesiones asíncronas

@@ -41,8 +41,10 @@ class CargarDatosResponse(BaseModel):
 
 
 class ColumnasResponse(BaseModel):
-    """Response con la lista de columnas del dataset activo."""
-    columnas: List[str]  # ["Nombre", "Edad", "Ciudad", "Salario", ...]
+    """Response con la lista de columnas clasificadas del dataset activo."""
+    columnas: List[str]                  # todas las columnas
+    cuantitativas: List[str]             # columnas numéricas (int, float)
+    cualitativas: List[str]              # columnas categóricas (object, string, bool)
 
 
 class EstadoResponse(BaseModel):

@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import engine, Base
-from app.routes import datos, analisis, pdf, correo
+from app.routes import datos, analisis, pdf, correo, sesiones
 
 
 # Reemplaza @app.on_event('startup') que está deprecado en versiones nuevas
@@ -33,6 +33,7 @@ app.add_middleware(
 )
 
 # Registra los routers con sus prefijos
+app.include_router(sesiones.router, prefix="/sesiones", tags=["Sesiones"])
 app.include_router(datos.router,    prefix="/datos",    tags=["Datos"])
 app.include_router(analisis.router, prefix="/analisis", tags=["Análisis"])
 app.include_router(pdf.router,      prefix="/pdf",      tags=["PDF"])

@@ -3,7 +3,7 @@
 # Reutiliza el DataFrame ya cargado en DatosService — no vuelve a descargarlo.
 
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.schemas import AnalisisRequest, AnalisisResponse
@@ -15,9 +15,9 @@ router = APIRouter()
 
 
 @router.post("/ejecutar", response_model=AnalisisResponse)
-def ejecutar_analisis(
+async def ejecutar_analisis(
     request: AnalisisRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     datos_service: DatosService = Depends(get_datos_service)
 ):
     """
@@ -30,7 +30,7 @@ def ejecutar_analisis(
     # Instancia el service de análisis con la sesión de DB
     service = AnalisisService(db)
 
-    return service.ejecutar(
+    return await service.ejecutar(
         df=datos_service.df,          # DataFrame ya cargado en memoria
         dataset_id=request.dataset_id,
         cols_cuant=request.columnas_cuantitativas,

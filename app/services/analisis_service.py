@@ -52,31 +52,34 @@ class AnalisisService(BaseService):
             self.resultados = {}
             self.rutas_graficos = []
 
-            # 1. Análisis de valores nulos
+            # 1. Análisis de valores nulos (ANTES de limpiar)
             self.resultados["nulos"] = self._analizar_nulos(df)
 
-            # 2. Tablas de frecuencia para columnas cualitativas
+            # 2. Limpieza de datos
+            df, self.resultados["limpieza"] = self._limpiar_datos(df, cols_cuant, cols_cual)
+
+            # 3. Tablas de frecuencia para columnas cualitativas
             self.resultados["frecuencias"] = self._tablas_frecuencia(df, cols_cual)
 
-            # 3. Estadísticas descriptivas para columnas cuantitativas
+            # 4. Estadísticas descriptivas para columnas cuantitativas
             self.resultados["estadisticas"] = self._estadisticas_cuant(df, cols_cuant)
 
-            # 4. Tabla de contingencia entre las dos primeras cualitativas
+            # 5. Tabla de contingencia entre las dos primeras cualitativas
             self.resultados["contingencia"] = self._tabla_contingencia(df, cols_cual)
 
-            # 5. Gráficos para cada columna cualitativa
+            # 6. Gráficos para cada columna cualitativa
             for col in cols_cual:
                 if col in df.columns:
                     ruta = self._grafico_cualitativo(df, col)
                     self.rutas_graficos.append(ruta)
 
-            # 6. Gráficos para cada columna cuantitativa
+            # 7. Gráficos para cada columna cuantitativa
             for col in cols_cuant:
                 if col in df.columns:
                     ruta = self._grafico_cuantitativo(df, col)
                     self.rutas_graficos.append(ruta)
 
-            # 7. Guarda las columnas seleccionadas en Neon
+            # 8. Guarda las columnas seleccionadas en Neon
             await self._guardar_columnas(dataset_id, cols_cuant, cols_cual)
 
             self.logger.info(f"EDA completado. Gráficos generados: {len(self.rutas_graficos)}")
@@ -88,6 +91,63 @@ class AnalisisService(BaseService):
 
         except Exception as e:
             self._handle_error(e, "Error al ejecutar el análisis exploratorio")
+
+    # ─── MÉTODOS PRIVADOS — LIMPIEZA ───────────────────────────────────────────
+
+    def _limpiar_datos(self, df: pd.DataFrame, cols_cuant: list, cols_cual: list) -> tuple:
+        """
+        Limpia el DataFrame antes del análisis:
+          - Elimina filas completamente vacías
+          - Elimina filas duplicadas
+          - Rellena nulos en cuantitativas con la mediana
+          - Rellena nulos en cualitativas con la moda
+          - Corrige tipos: fuerza numéricas en cuantitativas, string en cualitativas
+          - Recorta espacios en blanco en columnas de texto
+        Retorna (df_limpio, reporte_limpieza).
+        """
+        self.logger.info("Iniciando limpieza de datos")
+        reporte = {}
+        filas_antes = len(df)
+
+        # 1. Eliminar filas completamente vacías
+        df = df.dropna(how="all")
+        reporte["filas_vacias_eliminadas"] = filas_antes - len(df)
+
+        # 2. Eliminar duplicados
+        filas_pre_dup = len(df)
+        df = df.drop_duplicates()
+        reporte["duplicados_eliminados"] = filas_pre_dup - len(df)
+
+        # 3. Corregir tipos y limpiar cuantitativas
+        for col in cols_cuant:
+            if col not in df.columns:
+                continue
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+            mediana = df[col].median()
+            nulos = int(df[col].isnull().sum())
+            if nulos > 0:
+                df[col] = df[col].fillna(mediana)
+                reporte[f"{col}_nulos_rellenados"] = nulos
+
+        # 4. Corregir tipos y limpiar cualitativas
+        for col in cols_cual:
+            if col not in df.columns:
+                continue
+            df[col] = df[col].astype(str).str.strip()
+            # Reemplazar 'nan' (resultado de astype(str) sobre NaN) con la moda
+            moda = df.loc[df[col] != "nan", col].mode()
+            valor_moda = moda.iloc[0] if not moda.empty else "Desconocido"
+            mask = df[col] == "nan"
+            nulos = int(mask.sum())
+            if nulos > 0:
+                df.loc[mask, col] = valor_moda
+                reporte[f"{col}_nulos_rellenados"] = nulos
+
+        reporte["filas_despues"] = len(df)
+        reporte["filas_antes"] = filas_antes
+        self.logger.info(f"Limpieza completada: {filas_antes} → {len(df)} filas")
+
+        return df, reporte
 
     # ─── MÉTODOS PRIVADOS — ANÁLISIS ─────────────────────────────────────────
 
@@ -231,7 +291,7 @@ class AnalisisService(BaseService):
         """
         Genera tres gráficos para una columna cuantitativa:
           - Histograma con curva KDE
-          - Boxplot
+          - Boxplot (con stripplot si la distribución está muy concentrada)
         Los guarda como un solo PNG en /graficos/ y retorna la ruta.
         """
         self.logger.info(f"Generando gráfico cuantitativo para: {col}")
@@ -248,8 +308,17 @@ class AnalisisService(BaseService):
         ax1.set_ylabel("Frecuencia")
 
         # ── Boxplot ──
-        sns.boxplot(y=serie, ax=ax2, color="lightblue")
-        ax2.set_title("Boxplot — detección de outliers")
+        sns.boxplot(y=serie, ax=ax2, color="lightblue", width=0.4)
+
+        # Si IQR ≈ 0 (distribución muy concentrada), agrega puntos individuales
+        q1 = serie.quantile(0.25)
+        q3 = serie.quantile(0.75)
+        if q3 - q1 < 0.01 * (serie.max() - serie.min() + 1):
+            sns.stripplot(y=serie, ax=ax2, color="steelblue", alpha=0.3, size=3, jitter=True)
+            ax2.set_title("Boxplot + puntos (datos muy concentrados)")
+        else:
+            ax2.set_title("Boxplot — detección de outliers")
+
         ax2.set_ylabel(col)
 
         plt.tight_layout()

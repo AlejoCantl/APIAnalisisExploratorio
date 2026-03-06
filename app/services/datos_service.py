@@ -57,10 +57,16 @@ class DatosService(BaseService):
             self._handle_error(e, "Error al cargar el dataset")
 
     async def obtener_columnas(self) -> dict:
-        """Retorna columnas del DataFrame activo."""
+        """Retorna columnas del DataFrame clasificadas en cuantitativas y cualitativas."""
         try:
             self._verificar_df_cargado()
-            return {"columnas": self.df.columns.tolist()}
+            cuantitativas = self.df.select_dtypes(include=["number"]).columns.tolist()
+            cualitativas = self.df.select_dtypes(exclude=["number"]).columns.tolist()
+            return {
+                "columnas": self.df.columns.tolist(),
+                "cuantitativas": cuantitativas,
+                "cualitativas": cualitativas
+            }
         except Exception as e:
             self._handle_error(e, "Error al obtener columnas")
 
