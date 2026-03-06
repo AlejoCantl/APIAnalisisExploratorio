@@ -231,4 +231,4 @@ URL usada para testing:
 https://www.datos.gov.co/resource/ezzu-ke2k.csv
 ```
 
-Contiene 472 filas y 10 columnas sobre jornadas de vacunación animal.
+Contiene 472 filas y 10 columnas sobre jornadas de esterilización animal.
