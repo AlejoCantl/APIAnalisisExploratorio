@@ -68,6 +68,23 @@ class AnalisisResponse(BaseModel):
     graficos: List[str]                  # rutas de los PNG generados
 
 
+# ─── OUTLIERS ────────────────────────────────────────────────────────────────
+
+class TratarOutliersRequest(BaseModel):
+    """Request para tratar outliers en columnas cuantitativas."""
+    dataset_id: int                      # ID del dataset activo
+    metodo: str                          # "media", "mediana" o "moda"
+    columnas: List[str]                  # columnas cuantitativas a tratar
+
+
+class TratarOutliersResponse(BaseModel):
+    """Response tras tratar los outliers."""
+    mensaje: str
+    metodo_usado: str
+    columnas_tratadas: dict              # { "col": { "outliers_detectados": N, "valor_reemplazo": X } }
+    graficos: List[str]                  # rutas de PNG antes/después
+
+
 # ─── PDF ─────────────────────────────────────────────────────────────────────
 
 class PdfRequest(BaseModel):

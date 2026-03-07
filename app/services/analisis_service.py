@@ -468,3 +468,116 @@ class AnalisisService(BaseService):
             )
 
         return textos
+
+    # ─── MÉTODOS PÚBLICOS — TRATAMIENTO DE OUTLIERS ──────────────────────────
+
+    def tratar_outliers(self, df: pd.DataFrame, columnas: list, metodo: str) -> tuple:
+        """
+        Detecta outliers con IQR (igual que boxplot) y los reemplaza.
+        Métodos: 'media', 'mediana', 'moda'.
+        Retorna (df_tratado, reporte, rutas_graficos).
+        """
+        metodos_validos = ("media", "mediana", "moda")
+        if metodo not in metodos_validos:
+            raise ValueError(f"Método '{metodo}' no válido. Use: {metodos_validos}")
+
+        reporte = {}
+        rutas = []
+
+        for col in columnas:
+            if col not in df.columns:
+                self.logger.warning(f"Columna '{col}' no encontrada, se omite")
+                continue
+
+            serie = df[col].dropna()
+            q1 = serie.quantile(0.25)
+            q3 = serie.quantile(0.75)
+            iqr = q3 - q1
+            limite_inf = q1 - 1.5 * iqr
+            limite_sup = q3 + 1.5 * iqr
+
+            # Máscara de outliers
+            mask = (df[col] < limite_inf) | (df[col] > limite_sup)
+            n_outliers = int(mask.sum())
+
+            if n_outliers == 0:
+                reporte[col] = {
+                    "outliers_detectados": 0,
+                    "valor_reemplazo": None
+                }
+                continue
+
+            # Calcular valor de reemplazo según el método elegido
+            if metodo == "media":
+                valor = round(float(serie.mean()), 4)
+            elif metodo == "mediana":
+                valor = round(float(serie.median()), 4)
+            else:  # moda
+                moda = serie.mode()
+                valor = round(float(moda.iloc[0]), 4) if not moda.empty else round(float(serie.median()), 4)
+
+            # Gráfico comparativo ANTES de reemplazar
+            ruta = self._grafico_outliers(df, col, mask, limite_inf, limite_sup, valor, metodo)
+            rutas.append(ruta)
+
+            # Reemplazar outliers
+            df.loc[mask, col] = valor
+
+            reporte[col] = {
+                "outliers_detectados": n_outliers,
+                "valor_reemplazo": valor,
+                "limite_inferior": round(float(limite_inf), 4),
+                "limite_superior": round(float(limite_sup), 4),
+                "q1": round(float(q1), 4),
+                "q3": round(float(q3), 4),
+                "iqr": round(float(iqr), 4)
+            }
+
+            self.logger.info(
+                f"'{col}': {n_outliers} outliers reemplazados con {metodo}={valor}"
+            )
+
+        return df, reporte, rutas
+
+    def _grafico_outliers(self, df: pd.DataFrame, col: str,
+                          mask: pd.Series, lim_inf: float, lim_sup: float,
+                          valor_reemplazo: float, metodo: str) -> str:
+        """
+        Genera un gráfico comparativo: boxplot ANTES vs boxplot DESPUÉS
+        del tratamiento de outliers. Marca los outliers y el valor de reemplazo.
+        """
+        serie_antes = df[col].dropna()
+        serie_despues = df[col].copy()
+        serie_despues.loc[mask] = valor_reemplazo
+        serie_despues = serie_despues.dropna()
+
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+        fig.suptitle(
+            f"Tratamiento de outliers en '{col}' (método: {metodo})",
+            fontsize=13, fontweight="bold"
+        )
+
+        # ── ANTES ──
+        sns.boxplot(y=serie_antes, ax=ax1, color="salmon", width=0.4)
+        ax1.axhline(y=lim_sup, color="red", linestyle="--", alpha=0.7, label=f"Límite sup: {lim_sup:.2f}")
+        ax1.axhline(y=lim_inf, color="red", linestyle="--", alpha=0.7, label=f"Límite inf: {lim_inf:.2f}")
+        n_out = int(mask.sum())
+        ax1.set_title(f"ANTES — {n_out} outliers detectados")
+        ax1.set_ylabel(col)
+        ax1.legend(fontsize=8)
+
+        # ── DESPUÉS ──
+        sns.boxplot(y=serie_despues, ax=ax2, color="lightgreen", width=0.4)
+        ax2.axhline(y=valor_reemplazo, color="blue", linestyle="--", alpha=0.7,
+                     label=f"{metodo}: {valor_reemplazo:.2f}")
+        ax2.set_title(f"DESPUÉS — outliers → {metodo}")
+        ax2.set_ylabel(col)
+        ax2.legend(fontsize=8)
+
+        plt.tight_layout()
+
+        ruta = os.path.join(self.carpeta_graficos, f"outliers_{col.replace(' ', '_')}.png")
+        plt.savefig(ruta, dpi=150, bbox_inches="tight")
+        plt.close()
+
+        return ruta
