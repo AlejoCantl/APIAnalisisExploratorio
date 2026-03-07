@@ -512,7 +512,7 @@ class PdfService(BaseService):
             elems.append(Paragraph(
                 "No se generó tabla de contingencia porque no se indicaron "
                 "al menos dos columnas cualitativas.",
-                self._styles["Cuerpo"]
+                self._styles["TextoCuerpo"]
             ))
             elems.append(Spacer(1, 10))
             return elems
