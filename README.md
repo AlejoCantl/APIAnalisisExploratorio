@@ -2,19 +2,105 @@
 
 API REST construida con **FastAPI** + **PostgreSQL (Neon)** para ejecutar Análisis Exploratorio de Datos (EDA) sobre datasets públicos.
 
+Desplegada en **Render**: [`https://<tu-app>.onrender.com`](#) — Documentación Swagger en `/docs`
+
 ## Requisitos
 
 - Python 3.12+
 - PostgreSQL (Neon)
 - Dependencias: `pip install -r requirements.txt`
 
-## Ejecución
+## Ejecución local
 
 ```bash
 uvicorn app.main:app --reload --port 8000
 ```
 
 La documentación interactiva (Swagger) estará disponible en: `http://127.0.0.1:8000/docs`
+
+## Despliegue en Render
+
+1. Crear un **Web Service** en [render.com](https://render.com) conectado al repositorio.
+2. Configurar las variables de entorno en el dashboard de Render:
+   - `DATABASE_URL` — URL de conexión a Neon
+   - `SMTP_EMAIL` — Correo para envío de informes
+   - `SMTP_PASSWORD` — Contraseña de aplicación
+3. Render usará automáticamente el archivo `render.yaml` o la configuración manual:
+   - **Build Command:** `pip install -r requirements.txt`
+   - **Start Command:** `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+
+> El archivo `render.yaml` ya está incluido en el repositorio para despliegue automático.
+
+---
+
+## Base de datos — Modelo relacional
+
+```
+┌──────────────┐       ┌──────────────┐       ┌──────────────┐       ┌──────────────┐
+│   usuarios   │       │   sesiones   │       │   datasets   │       │   informes   │
+├──────────────┤       ├──────────────┤       ├──────────────┤       ├──────────────┤
+│ id       PK  │◄──┐   │ id       PK  │       │ id       PK  │◄──┐   │ id       PK  │
+│ nombre       │   └───│ usuario_id FK│       │ sesion_id FK │   └───│ dataset_id FK│
+│ apellido     │       │ fecha_consulta│      │ url_origen   │       │ ruta_pdf     │
+│ correo       │       │ estado_sesion │      │ tipo_archivo │       │ correo_enviad│
+│ fecha_registro│      └──────────────┘       │ columnas_*   │       │ estado_envio │
+└──────────────┘                               │ total_filas  │       │ fecha_gen    │
+                                               │ total_columnas│      │ fecha_envio  │
+                                               │ tiene_nulos  │       └──────────────┘
+                                               │ fecha_carga  │
+                                               └──────────────┘
+```
+
+### Tabla `usuarios`
+| Campo           | Tipo         | Descripción                              |
+|-----------------|--------------|------------------------------------------|
+| `id`            | int (PK)     | Identificador autoincremental            |
+| `nombre`        | string(100)  | Nombre(s) del usuario                    |
+| `apellido`      | string(100)  | Apellido(s) del usuario                  |
+| `correo`        | string(200)  | Correo — se guarda al enviar el informe  |
+| `fecha_registro`| datetime     | Timestamp de creación                    |
+
+### Tabla `sesiones`
+| Campo           | Tipo         | Descripción                              |
+|-----------------|--------------|------------------------------------------|
+| `id`            | int (PK)     | Identificador autoincremental            |
+| `usuario_id`    | int (FK)     | Referencia a `usuarios.id`               |
+| `fecha_consulta`| datetime     | Timestamp de creación                    |
+| `estado_sesion` | string(50)   | `activa` → `completada` o `cancelada`    |
+
+### Estados de sesión
+
+| Estado        | Cuándo se asigna                              |
+|---------------|-----------------------------------------------|
+| `activa`      | Al crear la sesión (`POST /sesiones/crear`)    |
+| `completada`  | Al enviar el correo (`POST /correo/enviar`)    |
+| `cancelada`   | Al cancelar (`POST /sesiones/cancelar`)        |
+
+### Tabla `datasets`
+| Campo                    | Tipo       | Descripción                          |
+|--------------------------|------------|--------------------------------------|
+| `id`                     | int (PK)   | Identificador autoincremental        |
+| `sesion_id`              | int (FK)   | Referencia a `sesiones.id`           |
+| `url_origen`             | text       | URL de descarga del archivo          |
+| `tipo_archivo`           | string(10) | `"csv"` o `"xlsx"`                   |
+| `columnas_cuantitativas` | text       | Columnas numéricas (separadas por ,) |
+| `columnas_cualitativas`  | text       | Columnas categóricas (separadas por ,)|
+| `columnas_json`          | text       | Todas las columnas en JSON           |
+| `total_filas`            | int        | Número de filas del dataset          |
+| `total_columnas`         | int        | Número de columnas del dataset       |
+| `tiene_nulos`            | bool       | `true` si hay valores nulos          |
+| `fecha_carga`            | datetime   | Timestamp de carga                   |
+
+### Tabla `informes`
+| Campo            | Tipo         | Descripción                          |
+|------------------|--------------|--------------------------------------|
+| `id`             | int (PK)     | Identificador autoincremental        |
+| `dataset_id`     | int (FK)     | Referencia a `datasets.id`           |
+| `ruta_pdf`       | text         | Ruta local del PDF generado          |
+| `correo_enviado` | string(200)  | Correo al que se envió               |
+| `estado_envio`   | string(50)   | `pendiente` / `enviado` / `error`    |
+| `fecha_generacion`| datetime    | Timestamp de creación del PDF        |
+| `fecha_envio`    | datetime     | Timestamp de envío exitoso           |
 
 ---
 
@@ -23,13 +109,20 @@ La documentación interactiva (Swagger) estará disponible en: `http://127.0.0.1
 Los endpoints deben llamarse **en este orden**:
 
 ```
-1. POST /sesiones/crear            → obtener sesion_id
+1. POST /sesiones/crear            → obtener sesion_id y usuario_id
 2. POST /datos/cargar              → obtener dataset_id
 3. GET  /datos/columnas            → ver columnas clasificadas
 4. POST /analisis/ejecutar         → ejecutar EDA completo
 5. POST /analisis/tratar-outliers  → (opcional) tratar outliers
 6. POST /pdf/generar               → generar informe PDF
-7. POST /correo/enviar             → enviar PDF por correo
+7. POST /correo/enviar             → enviar PDF por correo (sesión → "completada")
+```
+
+**Flujo alternativo — cancelar:**
+```
+1. POST /sesiones/crear            → obtener sesion_id
+   ... el usuario decide no continuar ...
+   POST /sesiones/cancelar         → sesión → "cancelada"
 ```
 
 > **Nota:** Si el servidor se reinicia, el DataFrame en memoria se pierde y se debe volver a llamar `/datos/cargar` antes de `/analisis/ejecutar`.
@@ -57,22 +150,65 @@ Verifica que la API esté funcionando.
 
 ### `POST /sesiones/crear` — Crear sesión
 
-Registra un nuevo usuario/sesión en la base de datos.
+Registra un usuario y crea una sesión. Si ya existe un usuario con exactamente el mismo nombre y apellido, lo reutiliza.
 
 **Request:**
 ```json
 {
-  "nombre_usuario": "Alejandro"
+  "nombre": "Alejandro",
+  "apellido": "Cantillo"
+}
+```
+
+| Campo     | Tipo   | Descripción              |
+|-----------|--------|--------------------------|
+| `nombre`  | string | Nombre(s) del usuario    |
+| `apellido`| string | Apellido(s) del usuario  |
+
+**Response (usuario nuevo):**
+```json
+{
+  "sesion_id": 1,
+  "usuario_id": 1,
+  "mensaje": "Sesión iniciada correctamente para Alejandro Cantillo",
+  "usuario_nuevo": true
+}
+```
+
+**Response (usuario existente):**
+```json
+{
+  "sesion_id": 2,
+  "usuario_id": 1,
+  "mensaje": "Bienvenido de nuevo, Alejandro Cantillo",
+  "usuario_nuevo": false
+}
+```
+
+---
+
+### `POST /sesiones/cancelar` — Cancelar sesión
+
+Marca una sesión activa como cancelada. Solo se pueden cancelar sesiones con estado `activa`.
+
+**Request:**
+```json
+{
+  "sesion_id": 3
 }
 ```
 
 **Response:**
 ```json
 {
-  "sesion_id": 5,
-  "mensaje": "Sesión iniciada correctamente"
+  "mensaje": "Sesión cancelada correctamente",
+  "estado": "cancelada"
 }
 ```
+
+**Errores:**
+- `404` — Sesión no encontrada
+- `400` — La sesión ya está completada o cancelada
 
 ---
 
@@ -327,16 +463,22 @@ El PDF incluye:
 
 ### `POST /correo/enviar` — Enviar informe por correo
 
-Envía el PDF generado al correo indicado.
+Envía el PDF generado al correo indicado. Obtiene el nombre del usuario automáticamente desde la sesión. **Marca la sesión como `completada`.**
 
 **Request:**
 ```json
 {
   "informe_id": 1,
   "correo": "usuario@mail.com",
-  "nombre_usuario": "Pedro Pablo Pérez Pacheco"
+  "sesion_id": 5
 }
 ```
+
+| Campo        | Tipo   | Descripción                          |
+|--------------|--------|--------------------------------------|
+| `informe_id` | int    | ID obtenido de `/pdf/generar`        |
+| `correo`     | string | Dirección de correo del usuario      |
+| `sesion_id`  | int    | ID de la sesión activa               |
 
 **Response:**
 ```json
@@ -345,6 +487,8 @@ Envía el PDF generado al correo indicado.
   "correo": "usuario@mail.com"
 }
 ```
+
+> Al enviar el correo, la sesión pasa automáticamente a estado `completada` y el correo se guarda en el registro del usuario.
 
 > **Requisito:** Definir `SMTP_EMAIL` y `SMTP_PASSWORD` en el archivo `.env`. Para Gmail, usar una [contraseña de aplicación](https://myaccount.google.com/apppasswords).
 
@@ -356,10 +500,10 @@ Envía el PDF generado al correo indicado.
 app/
 ├── main.py              # Punto de entrada — FastAPI app + lifespan
 ├── database.py          # Motor async SQLAlchemy + sesión (Neon)
-├── models.py            # Modelos ORM: Sesion, Dataset, Informe
+├── models.py            # Modelos ORM: Usuario, Sesion, Dataset, Informe
 ├── schemas.py           # Schemas Pydantic (request/response)
 ├── routes/
-│   ├── sesiones.py      # POST /sesiones/crear
+│   ├── sesiones.py      # POST /sesiones/crear, POST /sesiones/cancelar
 │   ├── datos.py         # POST /datos/cargar, GET /columnas, GET /estado
 │   ├── analisis.py      # POST /analisis/ejecutar, POST /analisis/tratar-outliers
 │   ├── pdf.py           # POST /pdf/generar (con o sin outliers)
@@ -372,6 +516,7 @@ app/
     └── correo_service.py    # Envío de PDF por correo (SMTP + HTML)
 graficos/                # PNGs generados por el análisis
 Informes/                # PDFs generados
+render.yaml              # Configuración de despliegue en Render
 ```
 
 ## Variables de entorno (`.env`)
@@ -383,6 +528,8 @@ SMTP_PASSWORD=xxxx xxxx xxxx xxxx
 SMTP_HOST=smtp.gmail.com        # opcional, default: smtp.gmail.com
 SMTP_PORT=587                   # opcional, default: 587
 ```
+
+> En Render, estas variables se configuran en **Environment → Environment Variables** del dashboard.
 
 ## Dataset de prueba
 

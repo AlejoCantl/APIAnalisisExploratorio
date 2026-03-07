@@ -10,16 +10,30 @@ from typing import List
 
 class SesionCreate(BaseModel):
     """Request para crear una sesión — se llama cuando el usuario da su nombre."""
-    nombre_usuario: str  # nombre completo ingresado en el chat
+    nombre: str      # nombre(s) del usuario
+    apellido: str    # apellido(s) del usuario
 
 
 class SesionResponse(BaseModel):
     """Response tras crear una sesión."""
-    sesion_id: int       # ID generado por Neon — Java lo guarda para usarlo después
-    mensaje: str         # "Sesión iniciada correctamente"
+    sesion_id: int       # ID de la sesión generada
+    usuario_id: int      # ID del usuario (nuevo o existente)
+    mensaje: str         # "Sesión iniciada correctamente" o "Usuario existente..."
+    usuario_nuevo: bool  # True si se creó un usuario nuevo
 
     class Config:
-        from_attributes = True  # permite convertir objetos ORM directamente a este schema
+        from_attributes = True
+
+
+class CancelarSesionRequest(BaseModel):
+    """Request para cancelar una sesión activa."""
+    sesion_id: int       # ID de la sesión a cancelar
+
+
+class CancelarSesionResponse(BaseModel):
+    """Response tras cancelar una sesión."""
+    mensaje: str
+    estado: str          # "cancelada"
 
 
 # ─── DATOS ───────────────────────────────────────────────────────────────────
@@ -106,7 +120,7 @@ class CorreoRequest(BaseModel):
     """Request para enviar el informe por correo."""
     informe_id: int          # ID del informe a enviar
     correo: str              # dirección de correo del usuario
-    nombre_usuario: str      # para personalizar el asunto del correo
+    sesion_id: int           # ID de la sesión — para obtener el nombre del usuario
 
 
 class CorreoResponse(BaseModel):

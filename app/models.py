@@ -3,6 +3,27 @@ from sqlalchemy.sql import func
 from app.database import Base
 
 
+# ─── TABLA: usuarios ─────────────────────────────────────────────────────────
+# Registra cada usuario de forma independiente — se reutiliza entre sesiones
+class Usuario(Base):
+    __tablename__ = "usuarios"
+
+    # Identificador único autoincremental
+    id       = Column(Integer, primary_key=True, index=True)
+
+    # Nombre(s) del usuario
+    nombre   = Column(String(100), nullable=False)
+
+    # Apellido(s) del usuario
+    apellido = Column(String(100), nullable=False)
+
+    # Correo — se actualiza cuando el usuario lo proporciona
+    correo   = Column(String(200), nullable=True)
+
+    # Timestamp automático de registro
+    fecha_registro = Column(DateTime, server_default=func.now())
+
+
 # ─── TABLA: sesiones ─────────────────────────────────────────────────────────
 # Registra cada vez que un usuario inicia el flujo del chat
 class Sesion(Base):
@@ -11,11 +32,8 @@ class Sesion(Base):
     # Identificador único autoincremental
     id             = Column(Integer, primary_key=True, index=True)
 
-    # Nombre completo ingresado por el usuario al inicio del chat
-    nombre_usuario = Column(String(200), nullable=False)
-
-    # Correo — se guarda al final del flujo cuando el usuario lo proporciona
-    correo         = Column(String(200), nullable=True)
+    # Referencia al usuario que inició la sesión
+    usuario_id     = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
 
     # Timestamp automático del momento en que se creó la sesión
     fecha_consulta = Column(DateTime, server_default=func.now())

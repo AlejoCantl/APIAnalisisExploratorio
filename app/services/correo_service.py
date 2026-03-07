@@ -15,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.base_service import BaseService
-from app.models import Informe, Sesion
+from app.models import Informe, Sesion, Usuario
 
 load_dotenv()
 
@@ -36,9 +36,10 @@ class CorreoService(BaseService):
     # ─── MÉTODO PÚBLICO PRINCIPAL ────────────────────────────────────────────
 
     async def enviar_informe(self, informe_id: int, correo_destino: str,
-                              nombre_usuario: str) -> dict:
+                              sesion_id: int) -> dict:
         """
         Envía el PDF adjunto al correo del usuario.
+        Obtiene el nombre del usuario a partir de la sesión.
         Actualiza el registro del informe en la BD con el estado del envío.
         """
         try:
@@ -55,10 +56,31 @@ class CorreoService(BaseService):
             if not os.path.exists(informe.ruta_pdf):
                 raise FileNotFoundError(f"PDF no encontrado: {informe.ruta_pdf}")
 
+            # Obtener nombre del usuario a partir de la sesión
+            result_sesion = await self.db.execute(
+                select(Sesion).filter(Sesion.id == sesion_id)
+            )
+            sesion = result_sesion.scalar_one_or_none()
+            if not sesion:
+                raise ValueError(f"No se encontró sesión con id={sesion_id}")
+
+            result_usuario = await self.db.execute(
+                select(Usuario).filter(Usuario.id == sesion.usuario_id)
+            )
+            usuario = result_usuario.scalar_one_or_none()
+            if not usuario:
+                raise ValueError(f"No se encontró usuario con id={sesion.usuario_id}")
+
+            nombre_completo = f"{usuario.nombre} {usuario.apellido}"
+
+            # Guardar el correo en el usuario si aún no lo tiene
+            if not usuario.correo:
+                usuario.correo = correo_destino
+
             # Enviar el correo
             self._enviar_smtp(
                 destino=correo_destino,
-                nombre=nombre_usuario,
+                nombre=nombre_completo,
                 ruta_pdf=informe.ruta_pdf,
             )
 
@@ -66,6 +88,10 @@ class CorreoService(BaseService):
             informe.correo_enviado = correo_destino
             informe.estado_envio = "enviado"
             informe.fecha_envio = datetime.utcnow()
+
+            # Marcar la sesión como completada — el flujo terminó
+            sesion.estado_sesion = "completada"
+
             await self.db.commit()
 
             self.logger.info(f"Informe enviado exitosamente a {correo_destino}")

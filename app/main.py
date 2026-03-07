@@ -9,9 +9,14 @@ from app.routes import datos, analisis, pdf, correo, sesiones
 
 # Reemplaza @app.on_event('startup') que está deprecado en versiones nuevas
 # Crea las tablas en Neon al iniciar — si ya existen no hace nada
+# NOTA: tras la reestructuración de usuarios/sesiones, ejecutar con
+#       DROP_TABLES=1 para recrear el esquema (esto borra datos existentes).
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    import os
     async with engine.begin() as conn:
+        if os.getenv("DROP_TABLES", "").strip() == "1":
+            await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
     yield  # aquí corre la app
     await engine.dispose()  # al apagar libera todas las conexiones

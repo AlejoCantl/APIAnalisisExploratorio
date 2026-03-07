@@ -24,5 +24,5 @@ async def enviar_correo(
     return await service.enviar_informe(
         informe_id=request.informe_id,
         correo_destino=request.correo,
-        nombre_usuario=request.nombre_usuario,
+        sesion_id=request.sesion_id,
     )
