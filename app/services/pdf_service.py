@@ -18,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.base_service import BaseService
+from app.services.analisis_service import AnalisisService
 from app.models import Informe, Dataset
 
 # ── Paleta de colores ──
@@ -171,7 +172,7 @@ class PdfService(BaseService):
     # ─── MÉTODO PÚBLICO PRINCIPAL ────────────────────────────────────────────
 
     async def generar_pdf(self, dataset_id: int, resultados: dict,
-                          rutas_graficos: list) -> dict:
+                          rutas_graficos: list, outliers_data: dict = None) -> dict:
         """
         Genera el informe PDF y registra en la BD.
         Retorna { mensaje, informe_id, ruta_pdf }.
@@ -192,7 +193,7 @@ class PdfService(BaseService):
             ruta_pdf = os.path.join(self.carpeta_informes, nombre_pdf)
 
             # Construir el PDF
-            self._construir_pdf(ruta_pdf, dataset, resultados, rutas_graficos)
+            self._construir_pdf(ruta_pdf, dataset, resultados, rutas_graficos, outliers_data)
 
             # Registrar en BD
             informe = Informe(
@@ -217,7 +218,7 @@ class PdfService(BaseService):
     # ─── CONSTRUCCIÓN DEL PDF ────────────────────────────────────────────────
 
     def _construir_pdf(self, ruta: str, dataset, resultados: dict,
-                       rutas_graficos: list):
+                       rutas_graficos: list, outliers_data: dict = None):
         """Arma el documento PDF completo con todas las secciones."""
 
         doc = SimpleDocTemplate(
@@ -251,6 +252,10 @@ class PdfService(BaseService):
 
         # ── Gráficos ──
         elementos += self._seccion_graficos(rutas_graficos)
+
+        # ── Outliers (solo si el usuario lo pidió) ──
+        if outliers_data:
+            elementos += self._seccion_outliers(outliers_data)
 
         # Construir con encabezado/pie en cada página
         doc.build(
@@ -563,4 +568,80 @@ class PdfService(BaseService):
             elems.append(img)
             elems.append(Spacer(1, 14))
 
+        return elems
+
+    def _seccion_outliers(self, outliers_data: dict) -> list:
+        """
+        Sección de tratamiento de outliers: interpretación, tabla resumen
+        y gráficos comparativos antes/después. Solo se incluye si el usuario
+        lo solicita con incluir_outliers=true.
+        """
+        elems = []
+        reporte = outliers_data.get("reporte", {})
+        graficos = outliers_data.get("graficos", [])
+        metodo = outliers_data.get("metodo", "mediana")
+
+        if not reporte:
+            return elems
+
+        elems.append(PageBreak())
+        elems.append(Paragraph(
+            '<font color="#d4ac0d">■</font>  7. Tratamiento de Outliers',
+            self._styles["Subtitulo"]
+        ))
+
+        # ── Interpretación textual ──
+        interpretacion = AnalisisService.generar_interpretacion_outliers(reporte, metodo)
+        for parrafo in interpretacion:
+            parrafo_html = parrafo.replace("\n", "<br/>")
+            elems.append(Paragraph(parrafo_html, self._styles["TextoCuerpo"]))
+
+        elems.append(Spacer(1, 10))
+
+        # ── Tabla resumen de outliers ──
+        elems.append(Paragraph(
+            f"▸ Resumen del tratamiento (método: <b>{metodo}</b>)",
+            self._styles["SubtituloSeccion"]
+        ))
+
+        data = [["Columna", "Outliers", "Valor Reemplazo", "Lím. Inferior", "Lím. Superior", "IQR"]]
+        for col, info in reporte.items():
+            n = info["outliers_detectados"]
+            if n == 0:
+                data.append([col, "0", "—", "—", "—", "—"])
+            else:
+                data.append([
+                    col,
+                    str(n),
+                    f"{info['valor_reemplazo']:,.2f}",
+                    f"{info.get('limite_inferior', 0):,.2f}",
+                    f"{info.get('limite_superior', 0):,.2f}",
+                    f"{info.get('iqr', 0):,.2f}",
+                ])
+
+        ancho_col = 6.5 * inch / 6
+        tabla = Table(data, colWidths=[ancho_col] * 6)
+        tabla.setStyle(self._tabla_estilo_base(AZUL_OSCURO))
+        elems.append(tabla)
+        elems.append(Spacer(1, 12))
+
+        # ── Gráficos comparativos antes/después ──
+        graficos_validos = [r for r in graficos if os.path.exists(r)]
+        if graficos_validos:
+            elems.append(Paragraph(
+                "▸ Gráficos comparativos <b>antes / después</b>",
+                self._styles["SubtituloSeccion"]
+            ))
+
+            for ruta in graficos_validos:
+                nombre = os.path.basename(ruta).replace(".png", "").replace("_", " ").title()
+                elems.append(Paragraph(
+                    f"<b>{nombre}</b>", self._styles["SubtituloSeccion"]
+                ))
+                img = Image(ruta, width=6.2 * inch, height=2.8 * inch)
+                img.hAlign = "CENTER"
+                elems.append(img)
+                elems.append(Spacer(1, 10))
+
+        elems.append(self._seccion_divider())
         return elems

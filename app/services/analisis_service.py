@@ -468,3 +468,203 @@ class AnalisisService(BaseService):
             )
 
         return textos
+
+    # ─── MÉTODOS PÚBLICOS — TRATAMIENTO DE OUTLIERS ──────────────────────────
+
+    def tratar_outliers(self, df: pd.DataFrame, columnas: list, metodo: str) -> tuple:
+        """
+        Detecta outliers con IQR (igual que boxplot) y los reemplaza.
+        Métodos: 'media', 'mediana', 'moda'.
+        Retorna (df_tratado, reporte, rutas_graficos).
+        """
+        metodos_validos = ("media", "mediana", "moda")
+        if metodo not in metodos_validos:
+            raise ValueError(f"Método '{metodo}' no válido. Use: {metodos_validos}")
+
+        reporte = {}
+        rutas = []
+
+        for col in columnas:
+            if col not in df.columns:
+                self.logger.warning(f"Columna '{col}' no encontrada, se omite")
+                continue
+
+            serie = df[col].dropna()
+            q1 = serie.quantile(0.25)
+            q3 = serie.quantile(0.75)
+            iqr = q3 - q1
+            limite_inf = q1 - 1.5 * iqr
+            limite_sup = q3 + 1.5 * iqr
+
+            # Máscara de outliers
+            mask = (df[col] < limite_inf) | (df[col] > limite_sup)
+            n_outliers = int(mask.sum())
+
+            if n_outliers == 0:
+                reporte[col] = {
+                    "outliers_detectados": 0,
+                    "valor_reemplazo": None
+                }
+                continue
+
+            # Calcular valor de reemplazo según el método elegido
+            if metodo == "media":
+                valor = round(float(serie.mean()), 4)
+            elif metodo == "mediana":
+                valor = round(float(serie.median()), 4)
+            else:  # moda
+                moda = serie.mode()
+                valor = round(float(moda.iloc[0]), 4) if not moda.empty else round(float(serie.median()), 4)
+
+            # Gráfico comparativo ANTES de reemplazar
+            ruta = self._grafico_outliers(df, col, mask, limite_inf, limite_sup, valor, metodo)
+            rutas.append(ruta)
+
+            # Reemplazar outliers
+            df.loc[mask, col] = valor
+
+            reporte[col] = {
+                "outliers_detectados": n_outliers,
+                "valor_reemplazo": valor,
+                "limite_inferior": round(float(limite_inf), 4),
+                "limite_superior": round(float(limite_sup), 4),
+                "q1": round(float(q1), 4),
+                "q3": round(float(q3), 4),
+                "iqr": round(float(iqr), 4)
+            }
+
+            self.logger.info(
+                f"'{col}': {n_outliers} outliers reemplazados con {metodo}={valor}"
+            )
+
+        return df, reporte, rutas
+
+    def _grafico_outliers(self, df: pd.DataFrame, col: str,
+                          mask: pd.Series, lim_inf: float, lim_sup: float,
+                          valor_reemplazo: float, metodo: str) -> str:
+        """
+        Genera un gráfico comparativo: boxplot ANTES vs boxplot DESPUÉS
+        del tratamiento de outliers. Usa misma escala en ambos ejes para
+        que la diferencia sea visualmente clara.
+        """
+        serie_antes = df[col].dropna()
+        serie_despues = df[col].copy()
+        serie_despues.loc[mask] = valor_reemplazo
+        serie_despues = serie_despues.dropna()
+        n_out = int(mask.sum())
+
+        fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+        fig.suptitle(
+            f"Tratamiento de outliers en '{col}' (método: {metodo})",
+            fontsize=14, fontweight="bold"
+        )
+
+        # Escala compartida para que se note la diferencia
+        y_min = min(serie_antes.min(), serie_despues.min())
+        y_max = max(serie_antes.max(), serie_despues.max())
+        margen = (y_max - y_min) * 0.08
+        for ax in axes:
+            ax.set_ylim(y_min - margen, y_max + margen)
+
+        # ── ANTES ──
+        ax1 = axes[0]
+        sns.boxplot(y=serie_antes, ax=ax1, color="salmon", width=0.4)
+        # Resaltar los outliers como puntos rojos
+        outlier_vals = serie_antes[mask.reindex(serie_antes.index, fill_value=False)]
+        if len(outlier_vals) > 0:
+            ax1.scatter(
+                [0] * len(outlier_vals), outlier_vals,
+                color="red", zorder=5, s=30, alpha=0.6, label=f"Outliers ({n_out})"
+            )
+        ax1.axhline(y=lim_sup, color="darkred", linestyle="--", alpha=0.7,
+                     label=f"Lím. sup: {lim_sup:,.2f}")
+        ax1.axhline(y=lim_inf, color="darkred", linestyle="--", alpha=0.7,
+                     label=f"Lím. inf: {lim_inf:,.2f}")
+        ax1.set_title(f"ANTES — {n_out} outliers detectados", fontsize=12)
+        ax1.set_ylabel(col)
+        ax1.legend(fontsize=8, loc="upper right")
+        ax1.grid(axis="y", alpha=0.3)
+
+        # ── DESPUÉS ──
+        ax2 = axes[1]
+        sns.boxplot(y=serie_despues, ax=ax2, color="lightgreen", width=0.4)
+        ax2.axhline(y=valor_reemplazo, color="blue", linestyle="--", alpha=0.8,
+                     label=f"{metodo}: {valor_reemplazo:,.2f}")
+        ax2.set_title(f"DESPUÉS — outliers reemplazados por {metodo}", fontsize=12)
+        ax2.set_ylabel(col)
+        ax2.legend(fontsize=8, loc="upper right")
+        ax2.grid(axis="y", alpha=0.3)
+
+        # Caja de texto con resumen numérico
+        resumen = (
+            f"Outliers: {n_out}\n"
+            f"Valor reemplazo: {valor_reemplazo:,.2f}\n"
+            f"IQR: {(lim_sup - lim_inf) / 3:,.2f}\n"
+            f"Rango original: [{serie_antes.min():,.2f}, {serie_antes.max():,.2f}]\n"
+            f"Rango nuevo: [{serie_despues.min():,.2f}, {serie_despues.max():,.2f}]"
+        )
+        fig.text(0.5, -0.02, resumen, ha="center", fontsize=9,
+                 fontstyle="italic", color="gray",
+                 bbox=dict(boxstyle="round,pad=0.5", facecolor="lightyellow", alpha=0.8))
+
+        plt.tight_layout(rect=[0, 0.08, 1, 0.95])
+
+        ruta = os.path.join(self.carpeta_graficos, f"outliers_{col.replace(' ', '_')}.png")
+        plt.savefig(ruta, dpi=150, bbox_inches="tight")
+        plt.close()
+
+        return ruta
+
+    @staticmethod
+    def generar_interpretacion_outliers(reporte: dict, metodo: str) -> list:
+        """
+        Genera párrafos interpretativos sobre el tratamiento de outliers.
+        Se usa en el informe PDF cuando el usuario lo solicita.
+        """
+        textos = []
+
+        total_outliers = sum(info["outliers_detectados"] for info in reporte.values())
+        cols_afectadas = [col for col, info in reporte.items() if info["outliers_detectados"] > 0]
+        cols_sin = [col for col, info in reporte.items() if info["outliers_detectados"] == 0]
+
+        if total_outliers == 0:
+            textos.append(
+                "No se detectaron valores atípicos (outliers) en ninguna de las "
+                "columnas analizadas mediante el método del rango intercuartílico (IQR)."
+            )
+            return textos
+
+        textos.append(
+            f"Se realizó un tratamiento de valores atípicos (outliers) utilizando el "
+            f"método del rango intercuartílico (IQR). Los valores fuera del rango "
+            f"[Q1 − 1.5×IQR, Q3 + 1.5×IQR] fueron reemplazados por la {metodo} "
+            f"de cada columna. En total se detectaron {total_outliers} outliers "
+            f"distribuidos en {len(cols_afectadas)} columna(s)."
+        )
+
+        for col in cols_afectadas:
+            info = reporte[col]
+            n = info["outliers_detectados"]
+            val = info["valor_reemplazo"]
+            q1 = info.get("q1", 0)
+            q3 = info.get("q3", 0)
+            lim_inf = info.get("limite_inferior", 0)
+            lim_sup = info.get("limite_superior", 0)
+            iqr = info.get("iqr", 0)
+
+            textos.append(
+                f"En la columna '{col}' se encontraron {n} valores atípicos. "
+                f"El rango intercuartílico es {iqr:,.2f} (Q1={q1:,.2f}, Q3={q3:,.2f}), "
+                f"lo que define límites aceptables entre {lim_inf:,.2f} y {lim_sup:,.2f}. "
+                f"Los {n} valores fuera de este rango fueron reemplazados por la "
+                f"{metodo} ({val:,.2f}), reduciendo la dispersión y el impacto del "
+                f"ruido en los análisis posteriores."
+            )
+
+        if cols_sin:
+            textos.append(
+                f"Las columnas {', '.join(cols_sin)} no presentaron outliers según "
+                f"el criterio IQR, por lo que no requirieron tratamiento."
+            )
+
+        return textos

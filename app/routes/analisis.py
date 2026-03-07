@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.schemas import AnalisisRequest, AnalisisResponse
+from app.schemas import AnalisisRequest, AnalisisResponse, TratarOutliersRequest, TratarOutliersResponse
 from app.services.analisis_service import AnalisisService
 from app.routes.datos import get_datos_service  # comparte la instancia global de DatosService
 from app.services.datos_service import DatosService
@@ -44,3 +44,42 @@ async def ejecutar_analisis(
     _analisis_service_cache["ultima"] = service
 
     return result
+
+
+@router.post("/tratar-outliers", response_model=TratarOutliersResponse)
+async def tratar_outliers(
+    request: TratarOutliersRequest,
+    db: AsyncSession = Depends(get_db),
+    datos_service: DatosService = Depends(get_datos_service)
+):
+    """
+    Detecta y reemplaza outliers en columnas cuantitativas usando IQR.
+    Métodos disponibles: 'media', 'mediana', 'moda'.
+    Genera gráficos comparativos antes/después por cada columna.
+    """
+    datos_service._verificar_df_cargado()
+
+    service = AnalisisService(db)
+
+    df_tratado, reporte, graficos = service.tratar_outliers(
+        df=datos_service.df,
+        columnas=request.columnas,
+        metodo=request.metodo
+    )
+
+    # Actualizar el DataFrame en memoria con los outliers tratados
+    datos_service.df = df_tratado
+
+    # Guardar resultados de outliers en cache para que el PDF pueda usarlos
+    _analisis_service_cache["outliers"] = {
+        "reporte": reporte,
+        "graficos": graficos,
+        "metodo": request.metodo,
+    }
+
+    return {
+        "mensaje": f"Outliers tratados con método '{request.metodo}'",
+        "metodo_usado": request.metodo,
+        "columnas_tratadas": reporte,
+        "graficos": graficos
+    }
