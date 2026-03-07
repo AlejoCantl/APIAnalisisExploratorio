@@ -27,6 +27,8 @@ Los endpoints deben llamarse **en este orden**:
 2. POST /datos/cargar         → obtener dataset_id
 3. GET  /datos/columnas       → ver columnas clasificadas
 4. POST /analisis/ejecutar    → ejecutar EDA completo
+5. POST /pdf/generar          → generar informe PDF
+6. POST /correo/enviar        → enviar PDF por correo
 ```
 
 > **Nota:** Si el servidor se reinicia, el DataFrame en memoria se pierde y se debe volver a llamar `/datos/cargar` antes de `/analisis/ejecutar`.
@@ -199,6 +201,65 @@ Ejecuta el análisis exploratorio completo sobre el dataset cargado. Incluye:
 
 ---
 
+### `POST /pdf/generar` — Generar informe PDF
+
+Genera un informe PDF profesional con todos los resultados del EDA: interpretación, tablas, estadísticas y gráficos.
+
+**Request:**
+```json
+{
+  "dataset_id": 6
+}
+```
+
+**Response:**
+```json
+{
+  "mensaje": "Informe generado",
+  "informe_id": 1,
+  "ruta_pdf": "Informes/informe_6.pdf"
+}
+```
+
+El PDF incluye:
+- Encabezado con franja de color y fecha
+- Ficha técnica del dataset
+- Nombres de integrantes del equipo
+- Interpretación general en lenguaje natural
+- Tabla de valores nulos
+- Tablas de frecuencia por columna cualitativa
+- Estadísticas descriptivas por columna cuantitativa
+- Tabla de contingencia
+- Gráficos incrustados
+- Pie de página con número de página
+
+---
+
+### `POST /correo/enviar` — Enviar informe por correo
+
+Envía el PDF generado al correo indicado.
+
+**Request:**
+```json
+{
+  "informe_id": 1,
+  "correo": "usuario@mail.com",
+  "nombre_usuario": "Pedro Pablo Pérez Pacheco"
+}
+```
+
+**Response:**
+```json
+{
+  "mensaje": "Informe enviado",
+  "correo": "usuario@mail.com"
+}
+```
+
+> **Requisito:** Definir `SMTP_EMAIL` y `SMTP_PASSWORD` en el archivo `.env`. Para Gmail, usar una [contraseña de aplicación](https://myaccount.google.com/apppasswords).
+
+---
+
 ## Estructura del proyecto
 
 ```
@@ -211,16 +272,26 @@ app/
 │   ├── sesiones.py      # POST /sesiones/crear
 │   ├── datos.py         # POST /datos/cargar, GET /columnas, GET /estado
 │   ├── analisis.py      # POST /analisis/ejecutar
-│   ├── pdf.py           # (pendiente)
-│   └── correo.py        # (pendiente)
+│   ├── pdf.py           # POST /pdf/generar
+│   └── correo.py        # POST /correo/enviar
 └── services/
     ├── base_service.py      # Clase base con logger y manejo de errores
     ├── datos_service.py     # Descarga, limpieza y persistencia de datasets
-    ├── analisis_service.py  # EDA: estadísticas, frecuencias, gráficos
-    ├── correo_service.py    # (pendiente)
-    └── pdf_service.py       # (pendiente — no existe aún)
+    ├── analisis_service.py  # EDA: estadísticas, frecuencias, gráficos, interpretación
+    ├── pdf_service.py       # Generación de informe PDF con reportlab
+    └── correo_service.py    # Envío de PDF por correo (SMTP + HTML)
 graficos/                # PNGs generados por el análisis
-Informes/                # PDFs generados (pendiente)
+Informes/                # PDFs generados
+```
+
+## Variables de entorno (`.env`)
+
+```env
+DATABASE_URL=postgresql://user:pass@host/db
+SMTP_EMAIL=correo@gmail.com
+SMTP_PASSWORD=xxxx xxxx xxxx xxxx
+SMTP_HOST=smtp.gmail.com        # opcional, default: smtp.gmail.com
+SMTP_PORT=587                   # opcional, default: 587
 ```
 
 ## Dataset de prueba

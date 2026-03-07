@@ -13,6 +13,9 @@ from app.services.datos_service import DatosService
 
 router = APIRouter()
 
+# Cache para compartir los resultados del último análisis con el endpoint de PDF
+_analisis_service_cache: dict = {}
+
 
 @router.post("/ejecutar", response_model=AnalisisResponse)
 async def ejecutar_analisis(
@@ -30,9 +33,14 @@ async def ejecutar_analisis(
     # Instancia el service de análisis con la sesión de DB
     service = AnalisisService(db)
 
-    return await service.ejecutar(
+    result = await service.ejecutar(
         df=datos_service.df,          # DataFrame ya cargado en memoria
         dataset_id=request.dataset_id,
         cols_cuant=request.columnas_cuantitativas,
         cols_cual=request.columnas_cualitativas
     )
+
+    # Guardar el service para que /pdf/generar pueda acceder a resultados y gráficos
+    _analisis_service_cache["ultima"] = service
+
+    return result

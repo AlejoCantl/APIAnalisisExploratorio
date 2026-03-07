@@ -79,7 +79,12 @@ class AnalisisService(BaseService):
                     ruta = self._grafico_cuantitativo(df, col)
                     self.rutas_graficos.append(ruta)
 
-            # 8. Guarda las columnas seleccionadas en Neon
+            # 8. Interpretación en lenguaje natural
+            self.resultados["interpretacion"] = self.generar_interpretacion(
+                df, cols_cuant, cols_cual
+            )
+
+            # 9. Guarda las columnas seleccionadas en Neon
             await self._guardar_columnas(dataset_id, cols_cuant, cols_cual)
 
             self.logger.info(f"EDA completado. Gráficos generados: {len(self.rutas_graficos)}")
@@ -351,3 +356,115 @@ class AnalisisService(BaseService):
 
         await self.db.commit()
         self.logger.info("Columnas guardadas correctamente en Neon")
+
+    # ─── MÉTODO PRIVADO — INTERPRETACIÓN ─────────────────────────────────────
+
+    def generar_interpretacion(self, df: pd.DataFrame,
+                                cols_cuant: list, cols_cual: list) -> list:
+        """
+        Genera una lista de párrafos interpretativos en lenguaje natural
+        a partir de los resultados del EDA. Se usa en el informe PDF.
+        """
+        textos = []
+        total_filas = len(df)
+        total_cols = len(df.columns)
+
+        # ── Intro general ──
+        textos.append(
+            f"El conjunto de datos analizado contiene {total_filas} registros "
+            f"y {total_cols} columnas. De estas, {len(cols_cuant)} son cuantitativas "
+            f"({', '.join(cols_cuant)}) y {len(cols_cual)} son cualitativas "
+            f"({', '.join(cols_cual)})."
+        )
+
+        # ── Interpretación de nulos ──
+        nulos = self.resultados.get("nulos", {})
+        cols_con_nulos = {k: v for k, v in nulos.items() if v["cantidad"] > 0}
+        if cols_con_nulos:
+            lineas = [f"Se detectaron valores nulos en {len(cols_con_nulos)} columna(s):"]
+            for col, info in cols_con_nulos.items():
+                lineas.append(
+                    f"  - '{col}' tiene {info['cantidad']} valores nulos "
+                    f"({info['porcentaje']}% del total)."
+                )
+            textos.append("\n".join(lineas))
+        else:
+            textos.append("No se detectaron valores nulos en ninguna columna del dataset.")
+
+        # ── Interpretación de limpieza ──
+        limpieza = self.resultados.get("limpieza", {})
+        if limpieza:
+            partes = []
+            vacias = limpieza.get("filas_vacias_eliminadas", 0)
+            dups = limpieza.get("duplicados_eliminados", 0)
+            if vacias > 0:
+                partes.append(f"se eliminaron {vacias} filas completamente vacías")
+            if dups > 0:
+                partes.append(f"se eliminaron {dups} filas duplicadas")
+            rellenos = [k for k in limpieza if k.endswith("_nulos_rellenados")]
+            if rellenos:
+                partes.append(
+                    f"se rellenaron valores nulos en {len(rellenos)} columna(s) "
+                    f"usando la mediana (cuantitativas) o la moda (cualitativas)"
+                )
+            if partes:
+                textos.append(
+                    "Durante la limpieza de datos: " + "; ".join(partes) + ". "
+                    f"El dataset pasó de {limpieza.get('filas_antes', '?')} a "
+                    f"{limpieza.get('filas_despues', '?')} filas."
+                )
+
+        # ── Interpretación de frecuencias (cualitativas) ──
+        frecuencias = self.resultados.get("frecuencias", {})
+        for col, info in frecuencias.items():
+            abs_dict = info.get("absoluta", {})
+            rel_dict = info.get("relativa", {})
+            if abs_dict:
+                top_cat = max(abs_dict, key=abs_dict.get)
+                top_val = abs_dict[top_cat]
+                top_pct = rel_dict.get(top_cat, 0)
+                n_cats = len(abs_dict)
+                textos.append(
+                    f"La columna cualitativa '{col}' presenta {n_cats} categorías "
+                    f"distintas. La categoría más frecuente es '{top_cat}' con "
+                    f"{top_val} apariciones ({top_pct}% del total)."
+                )
+
+        # ── Interpretación de estadísticas (cuantitativas) ──
+        estadisticas = self.resultados.get("estadisticas", {})
+        for col, stats in estadisticas.items():
+            media = stats.get("media", 0)
+            mediana = stats.get("mediana", 0)
+            std = stats.get("std", 0)
+            minimo = stats.get("minimo", 0)
+            maximo = stats.get("maximo", 0)
+
+            # Detección de asimetría por comparación media vs mediana
+            if abs(media - mediana) < 0.05 * std if std > 0 else True:
+                asimetria = "simétrica"
+            elif media > mediana:
+                asimetria = "sesgada hacia la derecha (asimetría positiva)"
+            else:
+                asimetria = "sesgada hacia la izquierda (asimetría negativa)"
+
+            textos.append(
+                f"La columna cuantitativa '{col}' tiene un promedio de {media} "
+                f"con desviación estándar de {std}. El valor mínimo es {minimo} "
+                f"y el máximo es {maximo}. La mediana es {mediana}, lo que indica "
+                f"una distribución {asimetria}."
+            )
+
+        # ── Interpretación de contingencia ──
+        contingencia = self.resultados.get("contingencia", {})
+        if contingencia:
+            col1, col2 = list(self.resultados.get("frecuencias", {}).keys())[:2]
+            total_combos = sum(
+                len(inner) for inner in contingencia.values()
+            )
+            textos.append(
+                f"La tabla de contingencia entre '{col1}' y '{col2}' muestra "
+                f"la distribución cruzada de ambas variables con "
+                f"{total_combos} combinaciones registradas."
+            )
+
+        return textos
