@@ -30,9 +30,21 @@ async def generar_pdf(
             detail="No hay resultados de análisis. Ejecute primero /analisis/ejecutar"
         )
 
+    # Incluir outliers solo si el usuario lo pide Y se ejecutó tratar-outliers antes
+    outliers_data = None
+    if request.incluir_outliers:
+        outliers_data = _analisis_service_cache.get("outliers")
+        if outliers_data is None:
+            from fastapi import HTTPException
+            raise HTTPException(
+                status_code=400,
+                detail="No hay resultados de outliers. Ejecute primero /analisis/tratar-outliers"
+            )
+
     pdf_service = PdfService(db)
     return await pdf_service.generar_pdf(
         dataset_id=request.dataset_id,
         resultados=service_cache.resultados,
         rutas_graficos=service_cache.rutas_graficos,
+        outliers_data=outliers_data,
     )

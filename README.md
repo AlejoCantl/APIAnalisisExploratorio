@@ -23,15 +23,18 @@ La documentación interactiva (Swagger) estará disponible en: `http://127.0.0.1
 Los endpoints deben llamarse **en este orden**:
 
 ```
-1. POST /sesiones/crear       → obtener sesion_id
-2. POST /datos/cargar         → obtener dataset_id
-3. GET  /datos/columnas       → ver columnas clasificadas
-4. POST /analisis/ejecutar    → ejecutar EDA completo
-5. POST /pdf/generar          → generar informe PDF
-6. POST /correo/enviar        → enviar PDF por correo
+1. POST /sesiones/crear            → obtener sesion_id
+2. POST /datos/cargar              → obtener dataset_id
+3. GET  /datos/columnas            → ver columnas clasificadas
+4. POST /analisis/ejecutar         → ejecutar EDA completo
+5. POST /analisis/tratar-outliers  → (opcional) tratar outliers
+6. POST /pdf/generar               → generar informe PDF
+7. POST /correo/enviar             → enviar PDF por correo
 ```
 
 > **Nota:** Si el servidor se reinicia, el DataFrame en memoria se pierde y se debe volver a llamar `/datos/cargar` antes de `/analisis/ejecutar`.
+
+> **Nota:** El paso 5 es **opcional**. Solo es necesario si desea incluir la sección de outliers en el informe PDF.
 
 ---
 
@@ -201,9 +204,62 @@ Ejecuta el análisis exploratorio completo sobre el dataset cargado. Incluye:
 
 ---
 
+### `POST /analisis/tratar-outliers` — Tratar outliers (opcional)
+
+Detecta y reemplaza outliers en columnas cuantitativas usando el método **IQR** (rango intercuartílico). El usuario elige la estrategia de reemplazo: media, mediana o moda. Se generan gráficos comparativos antes/después por cada columna que tenga outliers.
+
+**Request:**
+```json
+{
+  "dataset_id": 6,
+  "metodo": "mediana",
+  "columnas": ["canino_hembra", "canino_macho", "felino_macho"]
+}
+```
+
+| Campo        | Tipo     | Descripción                                        |
+|--------------|----------|----------------------------------------------------|
+| `dataset_id` | int      | ID obtenido de `/datos/cargar`                     |
+| `metodo`     | string   | `"media"`, `"mediana"` o `"moda"`                   |
+| `columnas`   | string[] | Columnas cuantitativas en las que buscar outliers  |
+
+**Response:**
+```json
+{
+  "mensaje": "Outliers tratados con método 'mediana'",
+  "metodo_usado": "mediana",
+  "columnas_tratadas": {
+    "canino_hembra": {
+      "outliers_detectados": 12,
+      "valor_reemplazo": 5.0,
+      "limite_inferior": -3.5,
+      "limite_superior": 15.5,
+      "q1": 2.0,
+      "q3": 9.0,
+      "iqr": 7.0
+    },
+    "canino_macho": {
+      "outliers_detectados": 0,
+      "valor_reemplazo": null
+    }
+  },
+  "graficos": [
+    "graficos/outliers_canino_hembra.png"
+  ]
+}
+```
+
+> **Nota:** Solo se generan gráficos para columnas que tengan al menos 1 outlier. El DataFrame en memoria queda actualizado con los valores reemplazados.
+
+---
+
 ### `POST /pdf/generar` — Generar informe PDF
 
-Genera un informe PDF profesional con todos los resultados del EDA: interpretación, tablas, estadísticas y gráficos.
+Genera un informe PDF profesional con todos los resultados del EDA. **Opcionalmente** incluye una sección de tratamiento de outliers si se solicita.
+
+#### Caso 1: PDF estándar (sin outliers)
+
+Genera el informe con las secciones habituales del EDA.
 
 **Request:**
 ```json
@@ -212,11 +268,44 @@ Genera un informe PDF profesional con todos los resultados del EDA: interpretaci
 }
 ```
 
+> `incluir_outliers` por defecto es `false`, por lo que no es necesario enviarlo.
+
 **Response:**
 ```json
 {
   "mensaje": "Informe generado",
   "informe_id": 1,
+  "ruta_pdf": "Informes/informe_6.pdf"
+}
+```
+
+#### Caso 2: PDF con sección de outliers
+
+Incluye todo lo del caso 1 **más** una sección adicional con:
+- Texto interpretativo explicando el tratamiento realizado
+- Tabla resumen de outliers por columna
+- Gráficos comparativos antes/después
+
+**Requisito previo:** Debe haberse ejecutado `/analisis/tratar-outliers` antes de generar el PDF. Si no se ha ejecutado, el endpoint retorna error 400.
+
+**Request:**
+```json
+{
+  "dataset_id": 6,
+  "incluir_outliers": true
+}
+```
+
+| Campo              | Tipo   | Descripción                                                  |
+|--------------------|--------|--------------------------------------------------------------|
+| `dataset_id`       | int    | ID obtenido de `/datos/cargar`                               |
+| `incluir_outliers` | bool   | `true` para incluir la sección de outliers (default: `false`)|
+
+**Response:**
+```json
+{
+  "mensaje": "Informe generado",
+  "informe_id": 2,
   "ruta_pdf": "Informes/informe_6.pdf"
 }
 ```
@@ -231,6 +320,7 @@ El PDF incluye:
 - Estadísticas descriptivas por columna cuantitativa
 - Tabla de contingencia
 - Gráficos incrustados
+- **(Solo si `incluir_outliers: true`)** Sección de tratamiento de outliers con interpretación, tabla y gráficos
 - Pie de página con número de página
 
 ---
@@ -271,8 +361,8 @@ app/
 ├── routes/
 │   ├── sesiones.py      # POST /sesiones/crear
 │   ├── datos.py         # POST /datos/cargar, GET /columnas, GET /estado
-│   ├── analisis.py      # POST /analisis/ejecutar
-│   ├── pdf.py           # POST /pdf/generar
+│   ├── analisis.py      # POST /analisis/ejecutar, POST /analisis/tratar-outliers
+│   ├── pdf.py           # POST /pdf/generar (con o sin outliers)
 │   └── correo.py        # POST /correo/enviar
 └── services/
     ├── base_service.py      # Clase base con logger y manejo de errores

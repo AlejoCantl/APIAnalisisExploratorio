@@ -70,6 +70,13 @@ async def tratar_outliers(
     # Actualizar el DataFrame en memoria con los outliers tratados
     datos_service.df = df_tratado
 
+    # Guardar resultados de outliers en cache para que el PDF pueda usarlos
+    _analisis_service_cache["outliers"] = {
+        "reporte": reporte,
+        "graficos": graficos,
+        "metodo": request.metodo,
+    }
+
     return {
         "mensaje": f"Outliers tratados con método '{request.metodo}'",
         "metodo_usado": request.metodo,

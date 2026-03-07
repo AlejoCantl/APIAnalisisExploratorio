@@ -89,7 +89,8 @@ class TratarOutliersResponse(BaseModel):
 
 class PdfRequest(BaseModel):
     """Request para generar el informe PDF."""
-    dataset_id: int      # ID del dataset cuyos resultados se incluyen en el PDF
+    dataset_id: int              # ID del dataset cuyos resultados se incluyen en el PDF
+    incluir_outliers: bool = False  # True para incluir sección de outliers en el informe
 
 
 class PdfResponse(BaseModel):
