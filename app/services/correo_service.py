@@ -285,10 +285,8 @@ class CorreoService(BaseService):
         else:
             items.append("ℹ️ No se detectaron columnas de identidad")
 
-        # Outliers
+        # Outliers — solo mostrar si se realizó
         if outliers_data:
             items.append(f"✅ Tratamiento de outliers (método: {outliers_data.get('metodo', '?')})")
-        else:
-            items.append("❌ Tratamiento de outliers — no solicitado")
 
         return "\n".join(f"                  <li>{item}</li>" for item in items)

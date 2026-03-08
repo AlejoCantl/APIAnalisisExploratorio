@@ -486,14 +486,13 @@ class PdfService(BaseService):
             ) if identidad else "No se detectaron columnas de identidad",
         })
 
-        # 8. Outliers
-        items.append({
-            "nombre": "Tratamiento de outliers",
-            "realizado": bool(outliers_data),
-            "observacion": (
-                f"Método: {outliers_data.get('metodo', '?')}"
-            ) if outliers_data else "No se solicitó tratamiento de outliers",
-        })
+        # 8. Outliers — solo mostrar si se realizó
+        if outliers_data:
+            items.append({
+                "nombre": "Tratamiento de outliers",
+                "realizado": True,
+                "observacion": f"Método: {outliers_data.get('metodo', '?')}",
+            })
 
         return items
 
