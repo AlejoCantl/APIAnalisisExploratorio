@@ -91,7 +91,7 @@ La documentación interactiva (Swagger) estará disponible en: `http://127.0.0.1
 | `id`                     | int (PK)   | Identificador autoincremental        |
 | `sesion_id`              | int (FK)   | Referencia a `sesiones.id`           |
 | `url_origen`             | text       | URL de descarga del archivo          |
-| `tipo_archivo`           | string(10) | `"csv"` o `"xlsx"`                   |
+| `tipo_archivo`           | string(10) | `"csv"`, `"xlsx"` o `"xls"`    |
 | `columnas_cuantitativas` | text       | Columnas numéricas (separadas por ,) |
 | `columnas_cualitativas`  | text       | Columnas categóricas (separadas por ,)|
 | `columnas_json`          | text       | Todas las columnas en JSON           |
@@ -237,7 +237,7 @@ Descarga un dataset desde una URL pública y guarda sus metadatos en Neon.
 | Campo       | Tipo   | Descripción                                |
 |-------------|--------|--------------------------------------------|
 | `url`       | string | URL pública del archivo CSV o XLSX         |
-| `tipo`      | string | `"csv"` o `"xlsx"`                         |
+| `tipo`      | string | `"csv"`, `"xlsx"` o `"xls"`              |
 | `sesion_id` | int    | ID obtenido de `/sesiones/crear`           |
 
 **Response:**
@@ -255,27 +255,44 @@ Descarga un dataset desde una URL pública y guarda sus metadatos en Neon.
 
 ### `GET /datos/columnas` — Obtener columnas clasificadas
 
-Retorna las columnas del dataset activo, clasificadas automáticamente en cuantitativas y cualitativas.
+Retorna las columnas del dataset activo, clasificadas automáticamente en cuantitativas, cualitativas y de identidad.
+
+Las **columnas de identidad** (ID, index, claves primarias, enteros secuenciales únicos) se detectan automáticamente y se excluyen de las listas cuantitativas/cualitativas para que no se analicen estadísticamente.
 
 **Request:** Sin body
 
-**Response:**
+**Response (dataset sin columna de identidad):**
 ```json
 {
   "columnas": [
-    "item", "no", "a_o", "mes", "barrio_o_vereda",
-    "poblacion_beneficiada", "canino_hembra", "canino_macho",
-    "felino_hembra", "felino_macho"
+    "Segment", "Country", "Product", "Units Sold", "Sales", "Profit"
   ],
-  "cuantitativas": [
-    "no", "poblacion_beneficiada", "canino_hembra",
-    "canino_macho", "felino_hembra", "felino_macho"
-  ],
-  "cualitativas": [
-    "item", "a_o", "mes", "barrio_o_vereda"
-  ]
+  "cuantitativas": ["Units Sold", "Sales", "Profit"],
+  "cualitativas": ["Segment", "Country", "Product"],
+  "identidad": []
 }
 ```
+
+**Response (dataset con columna de identidad):**
+```json
+{
+  "columnas": [
+    "PassengerId", "Survived", "Pclass", "Name", "Sex", "Age", "Fare"
+  ],
+  "cuantitativas": ["Survived", "Pclass", "Age", "Fare"],
+  "cualitativas": ["Name", "Sex"],
+  "identidad": ["PassengerId"]
+}
+```
+
+| Campo           | Tipo     | Descripción                                              |
+|-----------------|----------|----------------------------------------------------------|
+| `columnas`      | string[] | Todas las columnas del dataset                           |
+| `cuantitativas` | string[] | Columnas numéricas (excluye identidad)                    |
+| `cualitativas`  | string[] | Columnas categóricas (excluye identidad)                  |
+| `identidad`     | string[] | Columnas detectadas como ID/índice (excluidas del análisis) |
+
+> **Detección automática:** Se identifican por nombre (`id`, `index`, `pk`, `key`, `row`, `#`, `unnamed`) o por datos (columnas enteras con >95% valores únicos y secuencia incremental).
 
 ---
 
