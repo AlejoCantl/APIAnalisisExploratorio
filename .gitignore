@@ -12,3 +12,12 @@ test_all_changes.py
 test_endpoints.py
 test_no_contingencia.py
 test_regression.py
+test_flujo_completo.py
+test_identidad.py
+test_outliers.py
+test_pdf.py
+test_sesiones.py
+test_cargar.py
+test_columnas.py
+test_analisis.py
+test_correo.py

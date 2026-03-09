@@ -62,13 +62,36 @@ async def tratar_outliers(
     Métodos disponibles: 'media', 'mediana', 'moda'.
     Genera gráficos comparativos antes/después por cada columna.
     """
+    from fastapi import HTTPException
+
     datos_service._verificar_df_cargado()
+
+    # Validar que se proporcionaron columnas
+    if not request.columnas:
+        raise HTTPException(
+            status_code=400,
+            detail="Debe proporcionar al menos una columna cuantitativa para tratar outliers."
+        )
+
+    # Filtrar solo columnas numéricas del DataFrame
+    cols_numericas = datos_service.df.select_dtypes(include=["number"]).columns.tolist()
+    cols_validas = [c for c in request.columnas if c in cols_numericas]
+
+    if not cols_validas:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Ninguna de las columnas proporcionadas es cuantitativa (numérica). "
+                "El tratamiento de outliers solo aplica a columnas numéricas. "
+                f"Columnas numéricas disponibles: {cols_numericas if cols_numericas else 'ninguna'}"
+            )
+        )
 
     service = AnalisisService(db)
 
     df_tratado, reporte, graficos = service.tratar_outliers(
         df=datos_service.df,
-        columnas=request.columnas,
+        columnas=cols_validas,
         metodo=request.metodo
     )
 

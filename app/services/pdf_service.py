@@ -469,11 +469,11 @@ class PdfService(BaseService):
         })
 
         # 6. Gráficos
-        interpretacion = resultados.get("interpretacion", [])
         items.append({
             "nombre": "Gráficos de distribución",
-            "realizado": True,
-            "observacion": "Generados para cada columna seleccionada",
+            "realizado": bool(frecuencias or estadisticas),
+            "observacion": "Generados para cada columna seleccionada" if (frecuencias or estadisticas)
+                           else "Sin columnas cualitativas ni cuantitativas para graficar",
         })
 
         # 7. Columnas de identidad
@@ -486,13 +486,26 @@ class PdfService(BaseService):
             ) if identidad else "No se detectaron columnas de identidad",
         })
 
-        # 8. Outliers — solo mostrar si se realizó
+        # 8. Outliers — mostrar según si hay columnas cuantitativas
         if outliers_data:
-            items.append({
-                "nombre": "Tratamiento de outliers",
-                "realizado": True,
-                "observacion": f"Método: {outliers_data.get('metodo', '?')}",
-            })
+            reporte = outliers_data.get("reporte", {})
+            cols_tratadas = [c for c, info in reporte.items() if info.get("outliers_detectados", 0) > 0]
+            metodo = outliers_data.get('metodo', '?')
+            if estadisticas:  # hay columnas cuantitativas
+                items.append({
+                    "nombre": "Tratamiento de outliers",
+                    "realizado": True,
+                    "observacion": (
+                        f"Método: {metodo}, {len(cols_tratadas)} columna(s) con outliers"
+                        if cols_tratadas else f"Método: {metodo}, no se detectaron outliers"
+                    ),
+                })
+            else:
+                items.append({
+                    "nombre": "Tratamiento de outliers",
+                    "realizado": False,
+                    "observacion": "Sin columnas cuantitativas para tratar",
+                })
 
         return items
 

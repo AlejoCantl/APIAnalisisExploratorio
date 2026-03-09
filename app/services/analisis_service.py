@@ -69,16 +69,18 @@ class AnalisisService(BaseService):
             self.resultados["contingencia"] = self._tabla_contingencia(df, cols_cual)
 
             # 6. Gráficos para cada columna cualitativa
-            for col in cols_cual:
-                if col in df.columns:
-                    ruta = self._grafico_cualitativo(df, col)
-                    self.rutas_graficos.append(ruta)
+            if cols_cual:
+                for col in cols_cual:
+                    if col in df.columns:
+                        ruta = self._grafico_cualitativo(df, col)
+                        self.rutas_graficos.append(ruta)
 
             # 7. Gráficos para cada columna cuantitativa
-            for col in cols_cuant:
-                if col in df.columns:
-                    ruta = self._grafico_cuantitativo(df, col)
-                    self.rutas_graficos.append(ruta)
+            if cols_cuant:
+                for col in cols_cuant:
+                    if col in df.columns:
+                        ruta = self._grafico_cuantitativo(df, col)
+                        self.rutas_graficos.append(ruta)
 
             # 8. Interpretación en lenguaje natural
             self.resultados["interpretacion"] = self.generar_interpretacion(

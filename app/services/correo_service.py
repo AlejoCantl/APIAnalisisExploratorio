@@ -275,8 +275,11 @@ class CorreoService(BaseService):
         else:
             items.append("❌ Tabla de contingencia — se requieren al menos 2 columnas cualitativas")
 
-        # Gráficos
-        items.append("✅ Gráficos de distribución y frecuencia")
+        # Gráficos — solo si hay frecuencias o estadísticas (al menos un tipo de columna)
+        if frecuencias or estadisticas:
+            items.append("✅ Gráficos de distribución y frecuencia")
+        else:
+            items.append("❌ Gráficos — sin columnas cualitativas ni cuantitativas para graficar")
 
         # Columnas de identidad
         identidad = resultados.get("identidad", [])
@@ -285,8 +288,17 @@ class CorreoService(BaseService):
         else:
             items.append("ℹ️ No se detectaron columnas de identidad")
 
-        # Outliers — solo mostrar si se realizó
+        # Outliers — solo mostrar como realizado si hay columnas cuantitativas tratadas
         if outliers_data:
-            items.append(f"✅ Tratamiento de outliers (método: {outliers_data.get('metodo', '?')})")
+            reporte = outliers_data.get("reporte", {})
+            cols_con_outliers = [c for c, info in reporte.items() if info.get("outliers_detectados", 0) > 0]
+            metodo = outliers_data.get('metodo', '?')
+            if estadisticas:  # hay columnas cuantitativas
+                if cols_con_outliers:
+                    items.append(f"✅ Tratamiento de outliers (método: {metodo}, {len(cols_con_outliers)} columna(s) tratadas)")
+                else:
+                    items.append(f"✅ Tratamiento de outliers (método: {metodo}, no se detectaron outliers)")
+            else:
+                items.append("❌ Tratamiento de outliers — sin columnas cuantitativas")
 
         return "\n".join(f"                  <li>{item}</li>" for item in items)
